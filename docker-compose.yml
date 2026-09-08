@@ -2,13 +2,16 @@ version: "3.9"
 
 services:
   ssi-app:
-    build: .
+    build:
+      context: .
+      network: host
+
     network_mode: host
 
     environment:
       ACA_PY_URL: "https://cloud-aries-admin.devlab.biz.id"
-      ACA_PY_TOKEN: "ISI_ACA_PY_TOKEN_DI_SINI"
-      WALT_ID_TOKEN: "ISI_WALT_ID_TOKEN_DI_SINI"
+      ACA_PY_TOKEN: "ISI_ACA_PY_TOKEN"
+      WALT_ID_TOKEN: "ISI_WALT_ID_TOKEN"
       WALT_WALLET_API_BASE: "https://wallet-api.devlab.biz.id"
       WALLET_ID: "6923c4db-2880-4a6f-8f15-dac3d4f0a3a3"
       ENABLE_AUTO_PRESENT: "false"
