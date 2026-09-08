@@ -14,11 +14,14 @@ services:
       WALT_ID_TOKEN: "ISI_WALT_ID_TOKEN"
       WALT_WALLET_API_BASE: "https://wallet-api.devlab.biz.id"
       WALLET_ID: "6923c4db-2880-4a6f-8f15-dac3d4f0a3a3"
-      ENABLE_AUTO_PRESENT: "false"
+      ENABLE_AUTO_PRESENT: "true"
       ACA_PY_VERIFY_SSL: "false"
       FLASK_DEBUG: "false"
 
     restart: unless-stopped
+
+    # gunicorn 1 worker = 1 poller (exactly-once); 2 workers = 2 pollers race
+    command: ["gunicorn", "-w", "1", "-k", "gthread", "--threads", "4", "-b", "0.0.0.0:5050", "app:create_app()"]
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5050/health"]
