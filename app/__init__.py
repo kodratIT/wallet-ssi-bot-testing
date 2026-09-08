@@ -3,6 +3,9 @@ import logging
 from flask import Flask
 
 from app.config import settings
+from app.routes.acapy import bp as acapy_bp
+from app.routes.health import bp as health_bp
+from app.routes.walt import bp as walt_bp
 
 
 def create_app():
