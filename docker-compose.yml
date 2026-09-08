@@ -6,3 +6,21 @@ services:
     network_mode: host
     ports:
       - "5050:5050"
+    env_file:
+      - .env
+    environment:
+      # Override via .env atau langsung di sini
+      - ACA_PY_URL=${ACA_PY_URL:-https://cloud-aries-admin.devlab.biz.id}
+      - ACA_PY_TOKEN=${ACA_PY_TOKEN}
+      - WALT_ID_TOKEN=${WALT_ID_TOKEN}
+      - WALT_WALLET_API_BASE=${WALT_WALLET_API_BASE:-https://wallet-api.devlab.biz.id}
+      - WALLET_ID=${WALLET_ID:-6923c4db-2880-4a6f-8f15-dac3d4f0a3a3}
+      - ENABLE_AUTO_PRESENT=${ENABLE_AUTO_PRESENT:-false}
+      - ACA_PY_VERIFY_SSL=${ACA_PY_VERIFY_SSL:-false}
+      - FLASK_DEBUG=${FLASK_DEBUG:-false}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

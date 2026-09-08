@@ -1,0 +1,9 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+.env
+.venv
+holder_legacy.py
+tests/
+k6_output.log
