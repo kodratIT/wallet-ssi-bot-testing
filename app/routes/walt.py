@@ -3,19 +3,22 @@ import logging
 import requests
 from flask import Blueprint, jsonify, request
 
+from app.config import settings
 from app.services.walt_client import WaltClient
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("walt", __name__)
+# Connection-only mode: hidden when ENABLE_AUTO_PRESENT=false
 
 
 @bp.route("/simulate/use-presentation-request", methods=["POST"])
 def use_presentation_request():
     """
-    Sebelumnya: holder.py:1082 - logic Walt + print + hardcode credential di satu fungsi 60 baris.
-    Sekarang: validasi di route, bisnis di WaltClient, credential dari config.
+    Hidden in connection-only mode. Aktif hanya jika ENABLE_AUTO_PRESENT=true.
     """
+    if not settings.ENABLE_AUTO_PRESENT:
+        return jsonify({"error": "present disabled (connection-only mode, ENABLE_AUTO_PRESENT=false)"}), 404
     logger.info("🟢 Menerima request POST /simulate/use-presentation-request")
     try:
         data = request.get_json(force=True, silent=False)
@@ -28,7 +31,6 @@ def use_presentation_request():
 
         logger.info(f"🔗 presentationRequest: {presentation_url[:120]}...")
 
-        # Opsional: allow override credentials via request body untuk reusable testing
         selected = data.get("selectedCredentials") if isinstance(data, dict) else None
         disclosures = data.get("disclosures") if isinstance(data, dict) else None
 
@@ -43,7 +45,6 @@ def use_presentation_request():
         return jsonify({"status": "success", "result": result}), 200
 
     except requests.HTTPError as e:
-        # WaltClient sudah raise_for_status, mapping ke 502 agar k6 tahu upstream error
         detail = e.response.text if hasattr(e, "response") and e.response is not None else str(e)
         logger.error(f"❌ Walt.id HTTPError: {detail}")
         return jsonify({"error": "Failed to use presentation request", "detail": detail}), 502

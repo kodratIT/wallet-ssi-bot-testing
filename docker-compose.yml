@@ -14,7 +14,7 @@ services:
       WALT_ID_TOKEN: "ISI_WALT_ID_TOKEN"
       WALT_WALLET_API_BASE: "https://wallet-api.devlab.biz.id"
       WALLET_ID: "6923c4db-2880-4a6f-8f15-dac3d4f0a3a3"
-      ENABLE_AUTO_PRESENT: "true"
+      ENABLE_AUTO_PRESENT: "false"  # connection-only: auto-present disabled, ACA-Py auto_accept handles connection
       ACA_PY_VERIFY_SSL: "false"
       FLASK_DEBUG: "false"
 
