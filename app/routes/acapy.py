@@ -1,4 +1,5 @@
 import logging
+import secrets
 
 import requests
 from flask import Blueprint, jsonify, request
@@ -57,9 +58,13 @@ def receive_acapy_invitation():
     logger.info("📨 [RECEIVE] Mengirim undangan ke ACA-Py...")
     try:
         client = AcapyClient()
-        conn_id = client.receive_invitation(invitation)
-        if cred_id and conn_id:
-            credential_store.set_for_connection(conn_id, cred_id, referent)
+        result = client.receive_invitation(invitation)
+        conn_id = result.get("connection_id")
+        oob_id = result.get("oob_id")
+        mode = result.get("mode", "connection")
+        track_id = conn_id or oob_id
+        if cred_id and track_id:
+            credential_store.set_for_connection(track_id, cred_id, referent)
     except requests.RequestException as e:
         logger.error(f"❌ [RECEIVE] Gagal menerima undangan: {e}")
         detail = str(e)
@@ -69,8 +74,73 @@ def receive_acapy_invitation():
     except ValueError as e:
         return jsonify({"error": str(e)}), 500
 
-    logger.info(f"✅ [RECEIVE] Connection ID: {conn_id}")
-    return jsonify({"status": "undangan diterima (connection-only mode)", "connection_id": conn_id}), 200
+    logger.info(f"✅ [RECEIVE] mode={mode} connection_id={conn_id} oob_id={oob_id}")
+    run_id = request.headers.get("X-K6-Run-ID")
+    if run_id:
+        credential_store.track_connection(run_id, track_id, invitation.get("@id"))
+
+    return jsonify({
+        "status": f"undangan diterima ({mode})",
+        "mode": mode,
+        "connection_id": conn_id,
+        "oob_id": oob_id,
+    }), 200
+
+
+@bp.route("/simulate/acapy/cleanup", methods=["POST"])
+def cleanup_acapy_connections():
+    """Delete only holder and verifier connections created by one K6 stage."""
+    expected_token = settings.WALLET_CLEANUP_TOKEN
+    supplied_token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not expected_token or not secrets.compare_digest(expected_token, supplied_token):
+        return jsonify({"error": "cleanup unauthorized"}), 403
+
+    run_id = request.headers.get("X-K6-Run-ID")
+    if not run_id:
+        return jsonify({"error": "X-K6-Run-ID is required"}), 400
+    if not settings.VERIFIER_ACA_PY_TOKEN:
+        return jsonify({"error": "VERIFIER_ACA_PY_TOKEN is not configured"}), 503
+
+    tracked = credential_store.get_run_connections(run_id)
+    if not tracked:
+        return jsonify({"status": "already clean", "run_id": run_id}), 200
+
+    holder = AcapyClient()
+    verifier = AcapyClient(
+        base_url=settings.VERIFIER_ACA_PY_URL,
+        token=settings.VERIFIER_ACA_PY_TOKEN,
+    )
+    holder_deleted = verifier_deleted = 0
+    failures = []
+    for holder_connection_id, invitation_msg_id in tracked.items():
+        if holder.delete_connection(holder_connection_id):
+            holder_deleted += 1
+        else:
+            failures.append({"agent": "holder", "connection_id": holder_connection_id})
+        if not invitation_msg_id:
+            failures.append({"agent": "verifier", "connection_id": holder_connection_id, "error": "invitation ID missing"})
+            continue
+        try:
+            verifier_connections = verifier.list_connections(invitation_msg_id)
+        except requests.RequestException:
+            failures.append({"agent": "verifier", "invitation_msg_id": invitation_msg_id, "error": "list failed"})
+            continue
+        for connection in verifier_connections:
+            verifier_connection_id = connection.get("connection_id")
+            if verifier_connection_id and verifier.delete_connection(verifier_connection_id):
+                verifier_deleted += 1
+            elif verifier_connection_id:
+                failures.append({"agent": "verifier", "connection_id": verifier_connection_id})
+
+    if failures:
+        return jsonify({"error": "cleanup incomplete", "run_id": run_id, "failures": failures}), 502
+    credential_store.clear_run_connections(run_id)
+    return jsonify({
+        "status": "cleaned",
+        "run_id": run_id,
+        "holder_connections_deleted": holder_deleted,
+        "verifier_connections_deleted": verifier_deleted,
+    }), 200
 
 
 @bp.route("/simulate/acapy/present", methods=["POST"])

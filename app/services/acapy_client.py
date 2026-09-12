@@ -16,18 +16,30 @@ class AcapyClient:
     Testable: session bisa di-inject mock.
     """
 
-    def __init__(self, session: Optional[requests.Session] = None):
-        self.base_url = settings.ACA_PY_URL.rstrip("/")
-        self.headers = settings.aca_py_headers
+    def __init__(
+        self,
+        session: Optional[requests.Session] = None,
+        base_url: Optional[str] = None,
+        token: Optional[str] = None,
+    ):
+        self.base_url = (base_url or settings.ACA_PY_URL).rstrip("/")
+        token = settings.ACA_PY_TOKEN if token is None else token
+        self.headers = {"Content-Type": "application/json"}
+        if token:
+            self.headers["Authorization"] = token if token.startswith("Bearer ") else f"Bearer {token}"
         self.verify = settings.ACA_PY_VERIFY_SSL
         self.timeout = settings.ACA_PY_TIMEOUT
         self.session = session or http_session
 
-    def receive_invitation(self, invitation: dict) -> str:
+    def receive_invitation(self, invitation: dict) -> dict:
         """
         POST /out-of-band/receive-invitation
-        Returns: connection_id
-        Raises: requests.RequestException / ValueError jika tanpa connection_id
+        Returns: {"connection_id": str|None, "oob_id": str|None, "mode": "connection"|"connectionless"}
+        - OOB connection (ada handshake_protocols): ACA-Py mengembalikan connection_id.
+        - OOB connectionless (hanya requests~attach present-proof, tanpa handshake):
+          TIDAK ada connection_id, hanya oob_id. Ini normal — holder yang sudah
+          auto-respond-presentation-request akan langsung mempresentasi.
+        Raises: requests.RequestException / ValueError jika keduanya kosong.
         """
         url = f"{self.base_url}/out-of-band/receive-invitation"
         logger.info(f"📨 Mengirim undangan ke ACA-Py: {url}")
@@ -42,10 +54,12 @@ class AcapyClient:
         resp.raise_for_status()
         data = resp.json()
         conn_id = data.get("connection_id")
-        if not conn_id:
-            raise ValueError("Tidak ada connection_id yang dikembalikan dari ACA-Py")
-        logger.info(f"✅ Connection ID: {conn_id}")
-        return conn_id
+        oob_id = data.get("oob_id") or data.get("invitation_id")
+        if not conn_id and not oob_id:
+            raise ValueError("ACA-Py tidak mengembalikan connection_id maupun oob_id")
+        mode = "connection" if conn_id else "connectionless"
+        logger.info(f"✅ Undangan diterima mode={mode} connection_id={conn_id} oob_id={oob_id}")
+        return {"connection_id": conn_id, "oob_id": oob_id, "mode": mode}
 
     def list_proofs(self) -> list:
         """GET /present-proof-2.0/records"""
@@ -53,10 +67,11 @@ class AcapyClient:
         resp = self.session.get(url, headers=self.headers, verify=self.verify, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json().get("results", [])
-    def list_connections(self) -> list:
-        """GET /connections"""
+    def list_connections(self, invitation_msg_id: Optional[str] = None) -> list:
+        """GET /connections, optionally scoped to an OOB invitation."""
         url = f"{self.base_url}/connections"
-        resp = self.session.get(url, headers=self.headers, verify=self.verify, timeout=self.timeout)
+        params = {"invitation_msg_id": invitation_msg_id} if invitation_msg_id else None
+        resp = self.session.get(url, headers=self.headers, params=params, verify=self.verify, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json().get("results", [])
 
@@ -157,10 +172,12 @@ class AcapyClient:
             return False
 
     def delete_connection(self, connection_id: str) -> bool:
-        """DELETE /connections/{connection_id} - untuk cleanup opsional"""
+        """DELETE /connections/{connection_id}; a missing record is already clean."""
         url = f"{self.base_url}/connections/{connection_id}"
         try:
             resp = self.session.delete(url, headers=self.headers, verify=self.verify, timeout=self.timeout)
+            if resp.status_code == 404:
+                return True
             resp.raise_for_status()
             logger.info(f"🗑️ Connection {connection_id} dihapus")
             return True

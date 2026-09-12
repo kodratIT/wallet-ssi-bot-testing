@@ -12,13 +12,27 @@ def test_receive_invitation_success():
     mock_session.post.return_value = mock_resp
 
     client = AcapyClient(session=mock_session)
-    conn_id = client.receive_invitation({"@type": "test"})
+    result = client.receive_invitation({"@type": "test"})
 
-    assert conn_id == "conn-123"
+    assert result == {"connection_id": "conn-123", "oob_id": None, "mode": "connection"}
     mock_session.post.assert_called_once()
 
 
-def test_receive_invitation_no_connection_id_raises():
+def test_receive_invitation_connectionless_no_connection_id():
+    """OOB connectionless (requests~attach saja) tidak punya connection_id — normal."""
+    mock_session = Mock()
+    mock_resp = Mock()
+    mock_resp.json.return_value = {"oob_id": "oob-456", "state": "await_response"}
+    mock_resp.raise_for_status = Mock()
+    mock_session.post.return_value = mock_resp
+
+    client = AcapyClient(session=mock_session)
+    result = client.receive_invitation({"@type": "test"})
+
+    assert result == {"connection_id": None, "oob_id": "oob-456", "mode": "connectionless"}
+
+
+def test_receive_invitation_no_ids_raises():
     mock_session = Mock()
     mock_resp = Mock()
     mock_resp.json.return_value = {}
