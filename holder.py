@@ -15,23 +15,16 @@ Menjalankan dengan Docker:
   docker-compose up --build
 """
 
-import logging
 import sys
 
 from app import create_app
 from app.config import settings
-from app.jobs.auto_present import auto_present_job
 
 app = create_app()
 
 
 def _run():
     prod = "--prod" in sys.argv
-    if settings.ENABLE_AUTO_PRESENT:
-        auto_present_job.start()
-        logging.info("✅ Background auto-present thread telah dimulai (ENABLE_AUTO_PRESENT=true)")
-    else:
-        logging.info("⏸️ Auto-present disabled (set ENABLE_AUTO_PRESENT=true untuk aktifkan)")
 
     if prod:
         try:

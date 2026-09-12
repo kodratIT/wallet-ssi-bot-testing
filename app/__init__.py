@@ -27,16 +27,5 @@ def create_app():
     app.register_blueprint(acapy_bp)
     app.register_blueprint(walt_bp)
 
-    # Auto-present di Docker (gunicorn app:create_app()) — run.py/ __main__.py sudah handle native,
-    # tapi gunicorn bypass itu, jadi start di factory juga bila flag true.
-    # ponytail: 2 gunicorn workers = 2 pollers (per-process memory); single worker jika butuh exactly-once
-    if settings.ENABLE_AUTO_PRESENT:
-        try:
-            from app.jobs.auto_present import auto_present_job
-
-            auto_present_job.start()
-            app.logger.info("✅ Auto-present ENABLED (factory)")
-        except Exception as e:
-            app.logger.warning(f"Auto-present gagal start: {e}")
 
     return app

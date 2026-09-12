@@ -6,7 +6,7 @@ Usage:
   python run.py              # dev (Flask built-in, reload, log)
   python run.py --prod       # prod (gunicorn 2 workers)
   python run.py --port 5051  # custom port
-  ENABLE_AUTO_PRESENT=true python run.py
+  python run.py                  # auto-present polling tidak dijalankan
 
 Alternatif:
   python holder.py           # backward-compat, sama dengan run.py
@@ -29,7 +29,6 @@ def main():
     # Import setelah parse agar --help cepat
     from app import create_app
     from app.config import settings
-    from app.jobs.auto_present import auto_present_job
 
     host = args.host or settings.FLASK_HOST
     port = args.port or settings.FLASK_PORT
@@ -40,11 +39,6 @@ def main():
     for w in settings.validate():
         logging.warning(f"Config warning: {w}")
 
-    if settings.ENABLE_AUTO_PRESENT:
-        auto_present_job.start()
-        logging.info("✅ Auto-present ENABLED")
-    else:
-        logging.info("⏸️ Auto-present disabled (ENABLE_AUTO_PRESENT=true untuk aktifkan)")
 
     if args.prod:
         try:
