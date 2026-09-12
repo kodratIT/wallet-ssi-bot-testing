@@ -31,7 +31,7 @@ def create_session(
         connect=retries,
         backoff_factor=backoff_factor,
         status_forcelist=[502, 503, 504],
-        allowed_methods=["GET", "POST", "DELETE"],
+        allowed_methods=["GET", "DELETE"],
     )
     adapter = HTTPAdapter(pool_connections=pool_connections, pool_maxsize=pool_maxsize, max_retries=retry)
     session.mount("http://", adapter)

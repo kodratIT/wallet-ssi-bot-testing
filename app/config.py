@@ -20,7 +20,7 @@ class Settings:
     ACA_PY_URL: str = os.getenv("ACA_PY_URL", "https://cloud-aries-admin.devlab.biz.id")
     ACA_PY_TOKEN: str = os.getenv(
         "ACA_PY_TOKEN",
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3YWxsZXRfaWQiOiJjY2RkNmJmNC1jYzliLTQ0MTYtYmI5Yy1iMWNjNTg4YzJjODAiLCJpYXQiOjE3ODg3NTEyNTd9.PlIu0ZdMxW1UspBqTQvDcg77z7BqzHJ1DpzSUWi_raI",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3YWxsZXRfaWQiOiIyYWMyMmI1ZC1jMzZkLTRiNTItODExYy05MjEwYjhkNTY1NTEiLCJpYXQiOjE3ODkyMjYyMDd9.mXWbUH2WiBiM7x_9R9LtsZYjuEhZCn4xx-FRDTVZk44",
     )
     ACA_PY_VERIFY_SSL: bool = os.getenv("ACA_PY_VERIFY_SSL", "false").lower() == "true"
     ACA_PY_TIMEOUT: int = int(os.getenv("ACA_PY_TIMEOUT", "10"))

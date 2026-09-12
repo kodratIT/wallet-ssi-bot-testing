@@ -1,6 +1,7 @@
 from unittest.mock import Mock, MagicMock
 import pytest
 from app.services.acapy_client import AcapyClient
+from app.extensions import create_session
 
 
 def test_receive_invitation_success():
@@ -28,6 +29,10 @@ def test_receive_invitation_no_connection_id_raises():
     with pytest.raises(ValueError):
         client.receive_invitation({})
 
+
+
+def test_shared_session_does_not_retry_post_requests():
+    assert "POST" not in create_session().get_adapter("https://").max_retries.allowed_methods
 
 def test_send_presentation_uses_config_defaults():
     mock_session = Mock()
