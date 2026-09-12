@@ -65,7 +65,7 @@ class AutoPresentJob:
             self._poll_once()
 
     def _cleanup_all(self):
-        """Hapus semua proof dan connection saat wallet mulai."""
+        """Hapus proof exchange lama saat auto-present mulai."""
         try:
             logger.info("🧹 [AUTO-FIRST-RUN] Cleanup semua proof records...")
             proofs = self.client.list_proofs()
@@ -76,19 +76,6 @@ class AutoPresentJob:
                 "proof",
             )
 
-            logger.info("🧹 [AUTO-FIRST-RUN] Cleanup semua connections...")
-            connections = self.client.list_connections()
-            connection_ids = [c.get("connection_id") for c in connections if c.get("connection_id")]
-            self._delete_many(
-                connection_ids,
-                self.client.delete_connection,
-                "connection",
-            )
-
-            logger.info(
-                f"✅ [AUTO-FIRST-RUN] Cleanup selesai: "
-                f"{len(proof_ids)} proof, {len(connection_ids)} connection"
-            )
         except Exception as e:
             logger.error(f"❌ [AUTO-FIRST-RUN] Gagal cleanup: {e}")
 
