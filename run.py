@@ -33,11 +33,16 @@ def main():
     host = args.host or settings.FLASK_HOST
     port = args.port or settings.FLASK_PORT
 
-    app = create_app()
 
     # Validasi ringan
     for w in settings.validate():
         logging.warning(f"Config warning: {w}")
+
+    if args.prod and settings.ENABLE_AUTO_PRESENT:
+        import requests
+        from app.services.walt_client import WaltClient
+
+        WaltClient(session=requests.Session()).refresh_token()
 
 
     if args.prod:
@@ -62,6 +67,7 @@ def main():
         ]
         WSGIApplication().run()
     else:
+        app = create_app()
         print(f"🔧 Starting DEV di http://{host}:{port} (reload={settings.FLASK_DEBUG}, threaded=True)")
         print(f"   Health: http://localhost:{port}/health")
         print(f"   ACA-Py: {settings.ACA_PY_URL}")
