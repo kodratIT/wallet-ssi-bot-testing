@@ -1,4 +1,5 @@
 import logging
+import queue
 import secrets
 
 import requests
@@ -7,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from app.config import settings
 from app.services.acapy_client import AcapyClient
 from app.services.credential_store import credential_store
+from app.services.invitation_queue import invitation_receive_queue
 from app.utils.invitation import decode_base64_invitation
 
 logger = logging.getLogger(__name__)
@@ -55,36 +57,19 @@ def receive_acapy_invitation():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    logger.info("📨 [RECEIVE] Mengirim undangan ke ACA-Py...")
+    logger.info("📥 [RECEIVE] Menambahkan undangan ke background queue...")
     try:
-        client = AcapyClient()
-        result = client.receive_invitation(invitation)
-        conn_id = result.get("connection_id")
-        oob_id = result.get("oob_id")
-        mode = result.get("mode", "connection")
-        track_id = conn_id or oob_id
-        if cred_id and track_id:
-            credential_store.set_for_connection(track_id, cred_id, referent)
-    except requests.RequestException as e:
-        logger.error(f"❌ [RECEIVE] Gagal menerima undangan: {e}")
-        detail = str(e)
-        if hasattr(e, "response") and e.response is not None:
-            detail = e.response.text
-        return jsonify({"error": "Gagal menerima undangan oleh ACA-Py", "detail": detail}), 500
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 500
-
-    logger.info(f"✅ [RECEIVE] mode={mode} connection_id={conn_id} oob_id={oob_id}")
-    run_id = request.headers.get("X-K6-Run-ID")
-    if run_id:
-        credential_store.track_connection(run_id, track_id, invitation.get("@id"))
+        invitation_receive_queue.enqueue(invitation, cred_id, referent, request.headers.get("X-K6-Run-ID"))
+    except queue.Full:
+        logger.error("❌ [RECEIVE] Queue penerimaan undangan penuh")
+        return jsonify({"error": "Queue penerimaan undangan penuh, coba lagi"}), 503
 
     return jsonify({
-        "status": f"undangan diterima ({mode})",
-        "mode": mode,
-        "connection_id": conn_id,
-        "oob_id": oob_id,
-    }), 200
+        "status": "undangan masuk queue",
+        "mode": "pending",
+        "connection_id": None,
+        "oob_id": None,
+    }), 202
 
 
 @bp.route("/simulate/acapy/cleanup", methods=["POST"])

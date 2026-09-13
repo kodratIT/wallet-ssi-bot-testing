@@ -26,6 +26,8 @@ class CredentialStore:
         self._by_pres: Dict[str, Tuple[str, str]] = {}
         # fallback global - untuk k6 yang tidak kirim connection_id
         self._global: Optional[Tuple[str, str, float]] = None
+        # run_id -> holder connection_id -> OOB invitation message ID
+        self._run_connections: Dict[str, Dict[str, Optional[str]]] = {}
         self.ttl = ttl_seconds
 
     def set_for_connection(self, connection_id: Optional[str], cred_id: str, referent: Optional[str] = None):
@@ -46,6 +48,18 @@ class CredentialStore:
         with self._lock:
             self._by_pres[pres_ex_id] = (cred_id, referent)
             logger.info(f"📥 Cred store: pres {pres_ex_id[:8]}... -> {cred_id}")
+
+    def track_connection(self, run_id: str, connection_id: str, invitation_msg_id: Optional[str]):
+        with self._lock:
+            self._run_connections.setdefault(run_id, {})[connection_id] = invitation_msg_id
+
+    def get_run_connections(self, run_id: str) -> Dict[str, Optional[str]]:
+        with self._lock:
+            return self._run_connections.get(run_id, {}).copy()
+
+    def clear_run_connections(self, run_id: str):
+        with self._lock:
+            self._run_connections.pop(run_id, None)
 
     def get_for_proof(self, pres_ex_id: str, connection_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
         with self._lock:
@@ -85,6 +99,7 @@ class CredentialStore:
         with self._lock:
             self._by_connection.clear()
             self._by_pres.clear()
+            self._run_connections.clear()
             self._global = None
 
 

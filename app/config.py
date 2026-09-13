@@ -24,6 +24,10 @@ class Settings:
     )
     ACA_PY_VERIFY_SSL: bool = os.getenv("ACA_PY_VERIFY_SSL", "false").lower() == "true"
     ACA_PY_TIMEOUT: int = int(os.getenv("ACA_PY_TIMEOUT", "10"))
+    # Verifier ACA-Py is a separate tenant on the same multi-tenant admin URL.
+    VERIFIER_ACA_PY_URL: str = os.getenv("VERIFIER_ACA_PY_URL", ACA_PY_URL)
+    VERIFIER_ACA_PY_TOKEN: str = os.getenv("VERIFIER_ACA_PY_TOKEN", "")
+    WALLET_CLEANUP_TOKEN: str = os.getenv("WALLET_CLEANUP_TOKEN", "")
 
     # Walt.id
     WALT_WALLET_API_BASE: str = os.getenv("WALT_WALLET_API_BASE", "https://wallet-api.devlab.biz.id")

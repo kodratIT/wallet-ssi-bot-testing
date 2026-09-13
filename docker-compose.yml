@@ -10,13 +10,12 @@ services:
 
     environment:
       ACA_PY_URL: "https://cloud-aries-admin.devlab.biz.id"
-      ACA_PY_TOKEN: "ISI_ACA_PY_TOKEN"
+      ACA_PY_TOKEN: "ISI_ACA_PY_TOKEN"  # holder tenant JWT
+      VERIFIER_ACA_PY_URL: "https://cloud-aries-admin.devlab.biz.id"  # default = ACA_PY_URL (multi-tenant, token beda)
+      VERIFIER_ACA_PY_TOKEN: "ISI_VERIFIER_ACA_PY_TOKEN"  # verifier tenant JWT — wajib untuk cleanup
+      WALLET_CLEANUP_TOKEN: "ISI_WALLET_CLEANUP_TOKEN"  # secret random, harus sama dengan k6 WALLET_CLEANUP_TOKEN
       WALT_ID_TOKEN: "ISI_WALT_ID_TOKEN"
-      WALT_WALLET_API_BASE: "https://wallet-api.devlab.biz.id"
-      WALLET_ID: "6923c4db-2880-4a6f-8f15-dac3d4f0a3a3"
-      ENABLE_AUTO_PRESENT: "false"  # connection-only: auto-present disabled, ACA-Py auto_accept handles connection
-      ACA_PY_VERIFY_SSL: "false"
-      FLASK_DEBUG: "false"
+      ENABLE_AUTO_PRESENT: "true"
 
     restart: unless-stopped
 
