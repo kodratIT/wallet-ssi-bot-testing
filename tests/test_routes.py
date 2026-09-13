@@ -96,3 +96,11 @@ def test_walt_disabled_returns_404(monkeypatch):
     app = create_app(start_background=False)
     resp = app.test_client().post("/simulate/use-presentation-request", json={})
     assert resp.status_code == 404
+
+
+def test_sov_presentation_stays_disabled_when_walt_is_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_AUTO_PRESENT", True)
+    client = create_app(start_background=False).test_client()
+
+    assert client.post("/simulate/acapy/present", json={}).status_code == 404
+    assert client.get("/simulate/acapy/proofs").status_code == 404

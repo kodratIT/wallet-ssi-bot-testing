@@ -30,8 +30,4 @@ def create_app(start_background: bool = True):
 
     if start_background:
         invitation_receive_queue.start()
-        if settings.ENABLE_AUTO_PRESENT:
-            from app.jobs.auto_present import auto_present_job
-
-            auto_present_job.start()
     return app

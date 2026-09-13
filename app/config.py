@@ -46,7 +46,8 @@ class Settings:
         "WALT_SELECTED_CREDENTIALS", "urn:uuid:c888dce0-1a15-4cce-a830-3a223c9c6fac,urn:uuid:eb288794-ef36-406e-82ee-62f376536f3c"
     ).split(",")
 
-    # Auto-present job
+    # Legacy name retained for the CLI: enables Walt web presentation only.
+    # ACA-Py/SOV auto-present polling is permanently disabled.
     ENABLE_AUTO_PRESENT: bool = os.getenv("ENABLE_AUTO_PRESENT", "false").lower() == "true"
     AUTO_POLL_INTERVAL: int = int(os.getenv("AUTO_POLL_INTERVAL", "5"))
     AUTO_SEND_DELAY: int = int(os.getenv("AUTO_SEND_DELAY", "2"))
