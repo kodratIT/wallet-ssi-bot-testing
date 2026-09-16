@@ -145,18 +145,33 @@ class AutoPresentJob:
             connection_id = proof.get("connection_id")
             cred_id, referent = credential_store.get_for_proof(proof_id, connection_id)
             if not cred_id:
-                # belum ada cred dari k6, cek apakah sudah menunggu lama (>30s) -> fallback ke ENV agar tidak stuck selamanya
-                with self._lock:
-                    pending_since = self.pending_ids.get(proof_id, now)
-                waited = now - pending_since
-                if waited < 30:
-                    logger.info(f"⏳ [AUTO] Proof {proof_id} menunggu cred_id dari k6 (conn {connection_id[:8] if connection_id else '-'}) waited={int(waited)}s, keep pending")
-                    continue
-                # timeout fallback
-                cred_id, referent = settings.INDY_CRED_ID, settings.INDY_ATTR_REFERENT
-                logger.warning(f"⚠️ [AUTO] Timeout menunggu cred dari k6 ({int(waited)}s), fallback ENV untuk {proof_id}: {cred_id}")
+                if connection_id:
+                    # Connection flows may receive a credential hint from k6.
+                    with self._lock:
+                        pending_since = self.pending_ids.get(proof_id, now)
+                    waited = now - pending_since
+                    if waited < 30:
+                        logger.info(
+                            f"⏳ [AUTO] Proof {proof_id} menunggu cred_id dari k6 "
+                            f"(conn {connection_id[:8]}) waited={int(waited)}s, keep pending"
+                        )
+                        continue
+                    logger.warning(
+                        f"⚠️ [AUTO] Timeout menunggu cred dari k6 ({int(waited)}s), "
+                        f"fallback ENV untuk {proof_id}: {settings.INDY_CRED_ID}"
+                    )
+                else:
+                    logger.info(
+                        f"📌 [AUTO] Connectionless proof {proof_id}, "
+                        f"cari credential berdasarkan schema: {settings.INDY_SCHEMA_ID}"
+                    )
+                cred_id = None if settings.INDY_CRED_ID == "custom_credential_id_123" else settings.INDY_CRED_ID
+                referent = settings.INDY_ATTR_REFERENT
             else:
-                logger.info(f"📌 [AUTO] Pakai cred dinamis dari k6 untuk {proof_id}: {cred_id} (conn {connection_id[:8] if connection_id else '-'})")
+                logger.info(
+                    f"📌 [AUTO] Pakai cred dinamis dari k6 untuk {proof_id} "
+                    f"(conn {connection_id[:8] if connection_id else '-'})"
+                )
 
             logger.info(f"🎯 [AUTO] Proof request {proof_id} akan di-present")
             try:
@@ -165,7 +180,7 @@ class AutoPresentJob:
                 with self._lock:
                     self.processed_ids.add(proof_id)
                     self.pending_ids.pop(proof_id, None)
-            except requests.RequestException as e:
+            except (requests.RequestException, ValueError) as e:
                 logger.error(f"❌ [AUTO] Gagal kirim presentation {proof_id}: {e}")
                 if hasattr(e, "response") and e.response is not None:
                     logger.error(f"Detail: {e.response.status_code} - {e.response.text}")

@@ -81,6 +81,16 @@ class AcapyClient:
         resp = self.session.get(url, headers=self.headers, verify=self.verify, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
+    def find_credential_by_schema(self, schema_id: str) -> Optional[str]:
+        """Return an ACA-Py credential referent matching the Indy schema ID."""
+        if not schema_id:
+            return None
+        for item in self.list_credentials():
+            credential = item.get("cred_info", item) if isinstance(item, dict) else {}
+            if credential.get("schema_id") == schema_id:
+                return credential.get("referent") or credential.get("cred_id")
+        return None
+
 
     def send_presentation(self, pres_ex_id: str, cred_id: Optional[str] = None, referent: Optional[str] = None) -> dict:
         """
@@ -88,7 +98,14 @@ class AcapyClient:
         Auto-detect requested_attributes dari proof record agar semua referent terisi (bukan cuma 1).
         """
         url = f"{self.base_url}/present-proof-2.0/records/{pres_ex_id}/send-presentation"
-        cred_id = cred_id or settings.INDY_CRED_ID
+        if cred_id is None:
+            cred_id = settings.INDY_CRED_ID
+            if cred_id == "custom_credential_id_123":
+                cred_id = self.find_credential_by_schema(settings.INDY_SCHEMA_ID)
+        if not cred_id:
+            raise ValueError(
+                f"No ACA-Py credential found for schema {settings.INDY_SCHEMA_ID}"
+            )
         # referent hint dari k6, tapi akan di-override jika proof minta banyak atribut
         requested_referent = referent or settings.INDY_ATTR_REFERENT
 

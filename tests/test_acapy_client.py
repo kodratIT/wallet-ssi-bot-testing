@@ -56,9 +56,28 @@ def test_send_presentation_uses_config_defaults():
     mock_session.post.return_value = mock_resp
 
     client = AcapyClient(session=mock_session)
-    client.send_presentation("pres-123")
+    client.send_presentation("pres-123", cred_id="cred-123")
 
-    # Cek payload punya cred_id dari config (default custom_credential_id_123)
+    # Credential ID eksplisit dipakai untuk semua requested attributes.
     _, kwargs = mock_session.post.call_args
     assert kwargs["json"]["indy"]["requested_attributes"]["attr1_referent"]["cred_id"] is not None
     assert kwargs["json"]["auto_remove"] is True
+
+def test_find_credential_by_schema():
+    mock_session = Mock()
+    mock_resp = Mock(status_code=200)
+    mock_resp.json.return_value = {
+        "results": [
+            {
+                "referent": "cred-educational-id",
+                "schema_id": "RRZAA8JHrvT3vAX2wv1VSK:2:EducationalID:1.0",
+            }
+        ]
+    }
+    mock_session.get.return_value = mock_resp
+
+    client = AcapyClient(session=mock_session)
+
+    assert client.find_credential_by_schema(
+        "RRZAA8JHrvT3vAX2wv1VSK:2:EducationalID:1.0"
+    ) == "cred-educational-id"

@@ -27,6 +27,10 @@ def create_app(start_background: bool = True):
     app.register_blueprint(health_bp)
     app.register_blueprint(acapy_bp)
     app.register_blueprint(walt_bp)
+    if settings.ENABLE_AUTO_PRESENT:
+        from app.jobs.auto_present import auto_present_job
+        auto_present_job.start()
+
 
     if start_background:
         invitation_receive_queue.start()

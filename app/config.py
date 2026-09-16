@@ -46,13 +46,13 @@ class Settings:
         "WALT_SELECTED_CREDENTIALS", "urn:uuid:c888dce0-1a15-4cce-a830-3a223c9c6fac,urn:uuid:eb288794-ef36-406e-82ee-62f376536f3c"
     ).split(",")
 
-    # Legacy name retained for the CLI: enables Walt web presentation only.
-    # ACA-Py/SOV auto-present polling is permanently disabled.
+    # Enables the ACA-Py holder auto-present polling job.
     ENABLE_AUTO_PRESENT: bool = os.getenv("ENABLE_AUTO_PRESENT", "false").lower() == "true"
     AUTO_POLL_INTERVAL: int = int(os.getenv("AUTO_POLL_INTERVAL", "5"))
     AUTO_SEND_DELAY: int = int(os.getenv("AUTO_SEND_DELAY", "2"))
     # Untuk Indy - sebelumnya hardcode custom_credential_id_123 di 5 tempat
     INDY_CRED_ID: str = os.getenv("INDY_CRED_ID", "custom_credential_id_123")
+    INDY_SCHEMA_ID: str = os.getenv("INDY_SCHEMA_ID", "RRZAA8JHrvT3vAX2wv1VSK:2:EducationalID:1.0")
     INDY_ATTR_REFERENT: str = os.getenv("INDY_ATTR_REFERENT", "attr1_referent")
 
     # Flask
