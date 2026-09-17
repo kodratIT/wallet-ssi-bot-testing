@@ -76,6 +76,31 @@ def test_send_presentation_uses_full_proof_request_without_refetch():
     mock_session.get.assert_not_called()
     assert kwargs["json"]["auto_remove"] is True
 
+
+def test_send_presentation_reads_by_format_proof_request():
+    mock_session = Mock()
+    mock_resp = Mock()
+    mock_resp.json.return_value = {}
+    mock_resp.raise_for_status = Mock()
+    mock_session.post.return_value = mock_resp
+
+    AcapyClient(session=mock_session).send_presentation(
+        "pres-123",
+        cred_id="cred-123",
+        proof={
+            "by_format": {
+                "pres_request": {
+                    "indy": {
+                        "requested_attributes": {"actual_ref": {"name": "id"}}
+                    }
+                }
+            }
+        },
+    )
+
+    _, kwargs = mock_session.post.call_args
+    assert set(kwargs["json"]["indy"]["requested_attributes"]) == {"actual_ref"}
+
 def test_find_credential_by_schema():
     mock_session = Mock()
     mock_resp = Mock(status_code=200)

@@ -146,8 +146,10 @@ class AcapyClient:
 
         requested_attrs = {}
         proof = proof or {}
-        pres_req = proof.get("pres_request") or proof.get("by_format", {}).get("pres_request", {})
+        pres_req = proof.get("pres_request") or {}
         indy_req = pres_req.get("indy") or {}
+        if not indy_req:
+            indy_req = proof.get("by_format", {}).get("pres_request", {}).get("indy", {})
         req_attrs = indy_req.get("requested_attributes") or {}
         if req_attrs:
             for ref in req_attrs:
