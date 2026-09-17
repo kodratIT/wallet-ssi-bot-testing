@@ -48,7 +48,7 @@ def test_receive_invitation_no_ids_raises():
 def test_shared_session_does_not_retry_post_requests():
     assert "POST" not in create_session().get_adapter("https://").max_retries.allowed_methods
 
-def test_send_presentation_uses_config_defaults():
+def test_send_presentation_uses_full_proof_request_without_refetch():
     mock_session = Mock()
     mock_resp = Mock()
     mock_resp.json.return_value = {}
@@ -56,11 +56,24 @@ def test_send_presentation_uses_config_defaults():
     mock_session.post.return_value = mock_resp
 
     client = AcapyClient(session=mock_session)
-    client.send_presentation("pres-123", cred_id="cred-123")
+    client.send_presentation(
+        "pres-123",
+        cred_id="cred-123",
+        proof={
+            "pres_request": {
+                "indy": {
+                    "requested_attributes": {
+                        "name_ref": {"name": "name"},
+                        "id_ref": {"name": "id"},
+                    }
+                }
+            }
+        },
+    )
 
-    # Credential ID eksplisit dipakai untuk semua requested attributes.
     _, kwargs = mock_session.post.call_args
-    assert kwargs["json"]["indy"]["requested_attributes"]["attr1_referent"]["cred_id"] is not None
+    assert set(kwargs["json"]["indy"]["requested_attributes"]) == {"name_ref", "id_ref"}
+    mock_session.get.assert_not_called()
     assert kwargs["json"]["auto_remove"] is True
 
 def test_find_credential_by_schema():

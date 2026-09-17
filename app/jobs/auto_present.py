@@ -103,7 +103,19 @@ class AutoPresentJob:
     def _present_one(self, proof: dict) -> None:
         proof_id = proof["pres_ex_id"]
         try:
-            connection_id = proof.get("connection_id")
+            # The list endpoint may omit pres_request/by_format. Fetch the
+            # complete record before building requested_attributes.
+            current = self.client.get_proof(proof_id)
+            if current.get("state") != "request-received":
+                logger.warning(
+                    f"⏭️ Proof {proof_id} sudah bukan request-received "
+                    f"({current.get('state')})"
+                )
+                with self._lock:
+                    self.pending_ids.pop(proof_id, None)
+                return
+
+            connection_id = current.get("connection_id") or proof.get("connection_id")
             cred_id, referent = credential_store.get_for_proof(proof_id, connection_id)
             if not cred_id:
                 if connection_id:
@@ -131,7 +143,7 @@ class AutoPresentJob:
                 proof_id,
                 cred_id=cred_id,
                 referent=referent,
-                proof=proof,
+                proof=current,
             )
             logger.info(f"✅ [AUTO] Presentation berhasil untuk {proof_id}")
             with self._lock:
