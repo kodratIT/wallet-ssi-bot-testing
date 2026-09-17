@@ -4,6 +4,7 @@ import threading
 from dataclasses import dataclass
 from typing import Optional
 
+from app.config import settings
 from app.services.acapy_client import AcapyClient
 from app.services.credential_store import credential_store
 
@@ -21,22 +22,27 @@ class InvitationTask:
 class InvitationReceiveQueue:
     # ponytail: in-process queue; restart drops pending invitations, use a durable broker if required.
 
-    def __init__(self, maxsize: int = 1000):
+    def __init__(self, maxsize: int = 1000, workers: Optional[int] = None):
         self._tasks: queue.Queue[InvitationTask] = queue.Queue(maxsize=maxsize)
-        self._thread: Optional[threading.Thread] = None
+        self._workers = workers or settings.RECEIVE_WORKERS
+        self._threads: list[threading.Thread] = []
         self._lock = threading.Lock()
 
     def start(self) -> None:
         with self._lock:
-            if self._thread and self._thread.is_alive():
+            if any(thread.is_alive() for thread in self._threads):
                 return
-            self._thread = threading.Thread(
-                target=self._run,
-                daemon=True,
-                name="invitation-receive",
-            )
-            self._thread.start()
-        logger.info("[RECEIVE-QUEUE] Background invitation worker started")
+            self._threads = [
+                threading.Thread(
+                    target=self._run,
+                    daemon=True,
+                    name=f"invitation-receive-{index + 1}",
+                )
+                for index in range(self._workers)
+            ]
+            for thread in self._threads:
+                thread.start()
+        logger.info("[RECEIVE-QUEUE] Started %s background workers", self._workers)
 
     def enqueue(
         self,

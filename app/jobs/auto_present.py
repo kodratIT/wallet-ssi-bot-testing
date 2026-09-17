@@ -1,8 +1,8 @@
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
-
 import requests
 
 from app.config import settings
@@ -28,10 +28,12 @@ class AutoPresentJob:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()  # protect processed/pending saat Flask threaded + job concurrent
+        self._executor = ThreadPoolExecutor(max_workers=settings.AUTO_PRESENT_WORKERS)
 
         # state internal - sebelumnya global set di dalam fungsi
         self.processed_ids: set = set()
         self.pending_ids: dict = {}  # pres_ex_id -> timestamp
+        self.in_flight_ids: set = set()
 
     def start(self):
         """Start daemon thread - idempotent."""
@@ -42,11 +44,11 @@ class AutoPresentJob:
         self._thread = threading.Thread(target=self.run, daemon=True, name="auto-present")
         self._thread.start()
         logger.info("✅ Background auto-present thread telah dimulai")
-
     def stop(self, timeout: float = 5):
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=timeout)
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     def run(self):
         logger.info("👁️ [AUTO] Memulai pemantauan proof request global")
@@ -60,7 +62,11 @@ class AutoPresentJob:
     def _poll_once(self):
         now = time.time()
         with self._lock:
-            expired = [pid for pid, ts in self.pending_ids.items() if now - ts > self.send_delay + 5]
+            expired = [
+                pid
+                for pid, ts in self.pending_ids.items()
+                if pid not in self.in_flight_ids and now - ts > self.send_delay + 5
+            ]
             for pid in expired:
                 self.pending_ids.pop(pid, None)
 
@@ -71,58 +77,54 @@ class AutoPresentJob:
             return
 
         for proof in proofs:
-            state = proof.get("state")
             proof_id = proof.get("pres_ex_id")
-            if not proof_id:
-                continue
-            if state != "request-received":
+            if not proof_id or proof.get("state") != "request-received":
                 continue
 
             with self._lock:
-                if proof_id in self.processed_ids:
+                if proof_id in self.processed_ids or proof_id in self.in_flight_ids:
                     continue
-                is_pending = proof_id in self.pending_ids
-                pending_ts = self.pending_ids.get(proof_id, 0)
-
-            if is_pending:
+                pending_ts = self.pending_ids.get(proof_id)
+                if pending_ts is None:
+                    self.pending_ids[proof_id] = now
+                    logger.info(f"🕒 [AUTO] Menunggu {self.send_delay}s untuk proof {proof_id}")
+                    continue
                 if now - pending_ts < self.send_delay:
                     continue
-                try:
-                    current = self.client.get_proof(proof_id)
-                    if current.get("state") != "request-received":
-                        logger.warning(f"⏭️ Proof {proof_id} sudah bukan request-received ({current.get('state')})")
-                        with self._lock:
-                            self.pending_ids.pop(proof_id, None)
-                        continue
-                except requests.RequestException as e:
-                    logger.warning(f"⚠️ Gagal cek ulang {proof_id}: {e}")
-                    with self._lock:
-                        self.pending_ids.pop(proof_id, None)
-                    continue
-            else:
-                with self._lock:
-                    self.pending_ids[proof_id] = now
-                logger.info(f"🕒 [AUTO] Menunggu {self.send_delay}s untuk proof {proof_id}")
-                continue
+                if len(self.in_flight_ids) >= settings.AUTO_PRESENT_WORKERS:
+                    break
+                self.in_flight_ids.add(proof_id)
 
-            # Flow Acapy benar: k6 buat connection -> wallet connect -> k6 cek connected -> k6 kirim cred_id -> wallet approve
-            # Jadi tunggu cred dinamis dari k6, jika belum ada jangan auto-present dulu (keep pending)
+            self._executor.submit(self._present_one, proof)
+
+    def _present_one(self, proof: dict) -> None:
+        proof_id = proof["pres_ex_id"]
+        try:
+            current = self.client.get_proof(proof_id)
+            if current.get("state") != "request-received":
+                logger.warning(
+                    f"⏭️ Proof {proof_id} sudah bukan request-received "
+                    f"({current.get('state')})"
+                )
+                with self._lock:
+                    self.pending_ids.pop(proof_id, None)
+                return
+
             connection_id = proof.get("connection_id")
             cred_id, referent = credential_store.get_for_proof(proof_id, connection_id)
             if not cred_id:
                 if connection_id:
-                    # Connection flows may receive a credential hint from k6.
                     with self._lock:
-                        pending_since = self.pending_ids.get(proof_id, now)
-                    waited = now - pending_since
+                        pending_since = self.pending_ids.get(proof_id, time.time())
+                    waited = time.time() - pending_since
                     if waited < 30:
                         logger.info(
                             f"⏳ [AUTO] Proof {proof_id} menunggu cred_id dari k6 "
-                            f"(conn {connection_id[:8]}) waited={int(waited)}s, keep pending"
+                            f"(conn {connection_id[:8]}) waited={int(waited)}s"
                         )
-                        continue
+                        return
                     logger.warning(
-                        f"⚠️ [AUTO] Timeout menunggu cred dari k6 ({int(waited)}s), "
+                        f"⚠️ Timeout menunggu cred dari k6 ({int(waited)}s), "
                         f"fallback ENV untuk {proof_id}: {settings.INDY_CRED_ID}"
                     )
                 else:
@@ -132,25 +134,22 @@ class AutoPresentJob:
                     )
                 cred_id = None if settings.INDY_CRED_ID == "custom_credential_id_123" else settings.INDY_CRED_ID
                 referent = settings.INDY_ATTR_REFERENT
-            else:
-                logger.info(
-                    f"📌 [AUTO] Pakai cred dinamis dari k6 untuk {proof_id} "
-                    f"(conn {connection_id[:8] if connection_id else '-'})"
-                )
 
             logger.info(f"🎯 [AUTO] Proof request {proof_id} akan di-present")
-            try:
-                self.client.send_presentation(proof_id, cred_id=cred_id, referent=referent)
-                logger.info(f"✅ [AUTO] Presentation berhasil untuk {proof_id}")
-                with self._lock:
-                    self.processed_ids.add(proof_id)
-                    self.pending_ids.pop(proof_id, None)
-            except (requests.RequestException, ValueError) as e:
-                logger.error(f"❌ [AUTO] Gagal kirim presentation {proof_id}: {e}")
-                if hasattr(e, "response") and e.response is not None:
-                    logger.error(f"Detail: {e.response.status_code} - {e.response.text}")
-                with self._lock:
-                    self.pending_ids.pop(proof_id, None)
+            self.client.send_presentation(proof_id, cred_id=cred_id, referent=referent)
+            logger.info(f"✅ [AUTO] Presentation berhasil untuk {proof_id}")
+            with self._lock:
+                self.processed_ids.add(proof_id)
+                self.pending_ids.pop(proof_id, None)
+        except Exception as e:
+            logger.error(f"❌ [AUTO] Gagal kirim presentation {proof_id}: {e}")
+            if hasattr(e, "response") and e.response is not None:
+                logger.error(f"Detail: {e.response.status_code} - {e.response.text}")
+            with self._lock:
+                self.pending_ids.pop(proof_id, None)
+        finally:
+            with self._lock:
+                self.in_flight_ids.discard(proof_id)
 
 
 # Singleton untuk app factory jika butuh

@@ -61,12 +61,40 @@ class AcapyClient:
         logger.info(f"✅ Undangan diterima mode={mode} connection_id={conn_id} oob_id={oob_id}")
         return {"connection_id": conn_id, "oob_id": oob_id, "mode": mode}
 
-    def list_proofs(self) -> list:
-        """GET /present-proof-2.0/records"""
+    def list_proofs(self, page_size: int = 100) -> list:
+        """GET every proof record, following ACA-Py's limit/offset pagination."""
         url = f"{self.base_url}/present-proof-2.0/records"
-        resp = self.session.get(url, headers=self.headers, verify=self.verify, timeout=self.timeout)
-        resp.raise_for_status()
-        return resp.json().get("results", [])
+        proofs = []
+        seen_ids = set()
+        offset = 0
+
+        while True:
+            resp = self.session.get(
+                url,
+                headers=self.headers,
+                params={"limit": page_size, "offset": offset},
+                verify=self.verify,
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            page = resp.json().get("results", [])
+            if not page:
+                break
+
+            new_page = []
+            for proof in page:
+                proof_id = proof.get("pres_ex_id")
+                if proof_id and proof_id not in seen_ids:
+                    seen_ids.add(proof_id)
+                    new_page.append(proof)
+            proofs.extend(new_page)
+
+            if len(page) < page_size or not new_page:
+                break
+            offset += len(page)
+
+        return proofs
+
     def list_connections(self, invitation_msg_id: Optional[str] = None) -> list:
         """GET /connections, optionally scoped to an OOB invitation."""
         url = f"{self.base_url}/connections"
