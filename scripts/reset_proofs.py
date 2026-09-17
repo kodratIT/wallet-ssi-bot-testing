@@ -2,7 +2,10 @@
 """Interactively delete all ACA-Py proof records before a load test."""
 
 import sys
+from pathlib import Path
 from typing import Callable
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.acapy_client import AcapyClient
 
