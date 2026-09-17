@@ -1,7 +1,6 @@
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 import requests
@@ -33,7 +32,6 @@ class AutoPresentJob:
         # state internal - sebelumnya global set di dalam fungsi
         self.processed_ids: set = set()
         self.pending_ids: dict = {}  # pres_ex_id -> timestamp
-        self.first_run = True
 
     def start(self):
         """Start daemon thread - idempotent."""
@@ -53,44 +51,11 @@ class AutoPresentJob:
     def run(self):
         logger.info("👁️ [AUTO] Memulai pemantauan proof request global")
         while not self._stop_event.is_set():
-            if self.first_run:
-                self._cleanup_all()
-                self.first_run = False
-
-            # sleep dengan cek stop event agar bisa di-stop cepat
             if self._stop_event.wait(self.poll_interval):
                 break
 
             logger.info("🔁 [AUTO] Polling untuk proof request baru...")
             self._poll_once()
-
-    def _cleanup_all(self):
-        """Hapus proof exchange lama saat auto-present mulai."""
-        try:
-            logger.info("🧹 [AUTO-FIRST-RUN] Cleanup semua proof records...")
-            proofs = self.client.list_proofs()
-            proof_ids = [p.get("pres_ex_id") for p in proofs if p.get("pres_ex_id")]
-            self._delete_many(
-                proof_ids,
-                self.client.delete_proof,
-                "proof",
-            )
-
-        except Exception as e:
-            logger.error(f"❌ [AUTO-FIRST-RUN] Gagal cleanup: {e}")
-
-    @staticmethod
-    def _delete_many(ids, delete_fn, label):
-        if not ids:
-            logger.info(f"✅ [AUTO-FIRST-RUN] Tidak ada {label} untuk dihapus")
-            return
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(delete_fn, item_id) for item_id in ids]
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception as e:
-                    logger.warning(f"Gagal hapus {label} saat cleanup: {e}")
 
     def _poll_once(self):
         now = time.time()
