@@ -28,9 +28,11 @@ class AutoPresentJob:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()  # protect processed/pending saat Flask threaded + job concurrent
+        self._credential_lock = threading.Lock()
+        self._connectionless_credential_id: Optional[str] = None
+        self._credential_loaded = False
         self._executor = ThreadPoolExecutor(max_workers=settings.AUTO_PRESENT_WORKERS)
 
-        # state internal - sebelumnya global set di dalam fungsi
         self.processed_ids: set = set()
         self.pending_ids: dict = {}  # pres_ex_id -> timestamp
         self.in_flight_ids: set = set()
@@ -71,14 +73,14 @@ class AutoPresentJob:
                 self.pending_ids.pop(pid, None)
 
         try:
-            proofs = self.client.list_proofs()
+            proofs = self.client.list_proofs(state="request-received")
         except requests.RequestException as e:
             logger.error(f"❌ Gagal mengambil proof records: {e}")
             return
 
         for proof in proofs:
             proof_id = proof.get("pres_ex_id")
-            if not proof_id or proof.get("state") != "request-received":
+            if not proof_id:
                 continue
 
             with self._lock:
@@ -87,9 +89,10 @@ class AutoPresentJob:
                 pending_ts = self.pending_ids.get(proof_id)
                 if pending_ts is None:
                     self.pending_ids[proof_id] = now
-                    logger.info(f"🕒 [AUTO] Menunggu {self.send_delay}s untuk proof {proof_id}")
-                    continue
-                if now - pending_ts < self.send_delay:
+                    if self.send_delay > 0:
+                        logger.info(f"🕒 [AUTO] Menunggu {self.send_delay}s untuk proof {proof_id}")
+                        continue
+                elif now - pending_ts < self.send_delay:
                     continue
                 if len(self.in_flight_ids) >= settings.AUTO_PRESENT_WORKERS:
                     break
@@ -100,16 +103,6 @@ class AutoPresentJob:
     def _present_one(self, proof: dict) -> None:
         proof_id = proof["pres_ex_id"]
         try:
-            current = self.client.get_proof(proof_id)
-            if current.get("state") != "request-received":
-                logger.warning(
-                    f"⏭️ Proof {proof_id} sudah bukan request-received "
-                    f"({current.get('state')})"
-                )
-                with self._lock:
-                    self.pending_ids.pop(proof_id, None)
-                return
-
             connection_id = proof.get("connection_id")
             cred_id, referent = credential_store.get_for_proof(proof_id, connection_id)
             if not cred_id:
@@ -127,16 +120,19 @@ class AutoPresentJob:
                         f"⚠️ Timeout menunggu cred dari k6 ({int(waited)}s), "
                         f"fallback ENV untuk {proof_id}: {settings.INDY_CRED_ID}"
                     )
+                    cred_id = None if settings.INDY_CRED_ID == "custom_credential_id_123" else settings.INDY_CRED_ID
+                    referent = settings.INDY_ATTR_REFERENT
                 else:
-                    logger.info(
-                        f"📌 [AUTO] Connectionless proof {proof_id}, "
-                        f"cari credential berdasarkan schema: {settings.INDY_SCHEMA_ID}"
-                    )
-                cred_id = None if settings.INDY_CRED_ID == "custom_credential_id_123" else settings.INDY_CRED_ID
-                referent = settings.INDY_ATTR_REFERENT
+                    cred_id = self._resolve_connectionless_credential()
+                    referent = settings.INDY_ATTR_REFERENT
 
             logger.info(f"🎯 [AUTO] Proof request {proof_id} akan di-present")
-            self.client.send_presentation(proof_id, cred_id=cred_id, referent=referent)
+            self.client.send_presentation(
+                proof_id,
+                cred_id=cred_id,
+                referent=referent,
+                proof=proof,
+            )
             logger.info(f"✅ [AUTO] Presentation berhasil untuk {proof_id}")
             with self._lock:
                 self.processed_ids.add(proof_id)
@@ -150,6 +146,25 @@ class AutoPresentJob:
         finally:
             with self._lock:
                 self.in_flight_ids.discard(proof_id)
+
+    def _resolve_connectionless_credential(self) -> Optional[str]:
+        if settings.INDY_CRED_ID != "custom_credential_id_123":
+            return settings.INDY_CRED_ID
+        with self._credential_lock:
+            if not self._credential_loaded:
+                self._connectionless_credential_id = self.client.find_credential_by_schema(
+                    settings.INDY_SCHEMA_ID
+                )
+                self._credential_loaded = True
+                logger.info(
+                    "📌 [AUTO] Credential connectionless resolved once: %s",
+                    self._connectionless_credential_id,
+                )
+            if not self._connectionless_credential_id:
+                raise ValueError(
+                    f"No ACA-Py credential found for schema {settings.INDY_SCHEMA_ID}"
+                )
+            return self._connectionless_credential_id
 
 
 # Singleton untuk app factory jika butuh

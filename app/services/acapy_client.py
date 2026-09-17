@@ -61,7 +61,7 @@ class AcapyClient:
         logger.info(f"✅ Undangan diterima mode={mode} connection_id={conn_id} oob_id={oob_id}")
         return {"connection_id": conn_id, "oob_id": oob_id, "mode": mode}
 
-    def list_proofs(self, page_size: int = 100) -> list:
+    def list_proofs(self, page_size: int = 100, state: Optional[str] = None) -> list:
         """GET every proof record, following ACA-Py's limit/offset pagination."""
         url = f"{self.base_url}/present-proof-2.0/records"
         proofs = []
@@ -69,10 +69,13 @@ class AcapyClient:
         offset = 0
 
         while True:
+            params = {"limit": page_size, "offset": offset}
+            if state:
+                params["state"] = state
             resp = self.session.get(
                 url,
                 headers=self.headers,
-                params={"limit": page_size, "offset": offset},
+                params=params,
                 verify=self.verify,
                 timeout=self.timeout,
             )
@@ -109,6 +112,7 @@ class AcapyClient:
         resp = self.session.get(url, headers=self.headers, verify=self.verify, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
+
     def find_credential_by_schema(self, schema_id: str) -> Optional[str]:
         """Return an ACA-Py credential referent matching the Indy schema ID."""
         if not schema_id:
@@ -117,13 +121,17 @@ class AcapyClient:
             credential = item.get("cred_info", item) if isinstance(item, dict) else {}
             if credential.get("schema_id") == schema_id:
                 return credential.get("referent") or credential.get("cred_id")
-        return None
 
-
-    def send_presentation(self, pres_ex_id: str, cred_id: Optional[str] = None, referent: Optional[str] = None) -> dict:
+    def send_presentation(
+        self,
+        pres_ex_id: str,
+        cred_id: Optional[str] = None,
+        referent: Optional[str] = None,
+        proof: Optional[dict] = None,
+    ) -> dict:
         """
-        POST /present-proof-2.0/records/{pres_ex_id}/send-presentation
-        Auto-detect requested_attributes dari proof record agar semua referent terisi (bukan cuma 1).
+        POST /present-proof-2.0/records/{pres_ex_id}/send-presentation.
+        Uses a supplied proof record to avoid a second GET in the poller.
         """
         url = f"{self.base_url}/present-proof-2.0/records/{pres_ex_id}/send-presentation"
         if cred_id is None:
@@ -134,31 +142,17 @@ class AcapyClient:
             raise ValueError(
                 f"No ACA-Py credential found for schema {settings.INDY_SCHEMA_ID}"
             )
-        # referent hint dari k6, tapi akan di-override jika proof minta banyak atribut
         requested_referent = referent or settings.INDY_ATTR_REFERENT
 
-        # Coba ambil detail proof untuk tahu requested_attributes yang diminta verifier
         requested_attrs = {}
-        try:
-            proof = self.get_proof(pres_ex_id)
-            # by_format.pres_request.indy.requested_attributes atau pres_request.orig
-            # ACA-Py v2: proof.pres_request -> {indy: {requested_attributes: {attr1_referent: {name, restrictions}}, ...}}
-            pres_req = proof.get("pres_request") or proof.get("by_format", {}).get("pres_request", {})
-            indy_req = pres_req.get("indy") or {}
-            if not indy_req:
-                # fallback: proof.by_format.pres_request.indy
-                indy_req = proof.get("by_format", {}).get("pres_request", {}).get("indy", {})
-            req_attrs = indy_req.get("requested_attributes") or {}
-            if req_attrs:
-                for ref in req_attrs.keys():
-                    requested_attrs[ref] = {"cred_id": cred_id, "revealed": True}
-                logger.info(f"🔍 Proof {pres_ex_id} minta {list(req_attrs.keys())} -> pakai cred {cred_id} untuk semua")
-            else:
-                logger.warning(f"⚠️ Proof {pres_ex_id} tidak ada requested_attributes, fallback ke {requested_referent}")
-        except Exception as e:
-            logger.warning(f"⚠️ Gagal fetch proof {pres_ex_id} untuk auto-detect referent: {e}")
-
-        if not requested_attrs:
+        proof = proof or {}
+        pres_req = proof.get("pres_request") or proof.get("by_format", {}).get("pres_request", {})
+        indy_req = pres_req.get("indy") or {}
+        req_attrs = indy_req.get("requested_attributes") or {}
+        if req_attrs:
+            for ref in req_attrs:
+                requested_attrs[ref] = {"cred_id": cred_id, "revealed": True}
+        else:
             requested_attrs = {requested_referent: {"cred_id": cred_id, "revealed": True}}
 
         payload = {
@@ -169,10 +163,14 @@ class AcapyClient:
             },
             "auto_remove": True,
         }
-        logger.info(f"📤 Mengirim presentasi untuk {pres_ex_id} (cred_id={cred_id} referents={list(requested_attrs.keys())})")
+        logger.info(
+            f"📤 Mengirim presentasi untuk {pres_ex_id} "
+            f"(cred_id={cred_id} referents={list(requested_attrs.keys())})"
+        )
         resp = self.session.post(url, headers=self.headers, json=payload, verify=self.verify, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
+
 
     def list_credentials(self) -> list:
         """GET /credentials - list wallet credentials (untuk cek cred_id valid)"""
