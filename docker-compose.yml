@@ -15,7 +15,7 @@ services:
       VERIFIER_ACA_PY_TOKEN: "ISI_VERIFIER_ACA_PY_TOKEN"  # verifier tenant JWT — wajib untuk cleanup
       WALLET_CLEANUP_TOKEN: "ISI_WALLET_CLEANUP_TOKEN"  # secret random, harus sama dengan k6 WALLET_CLEANUP_TOKEN
       WALT_ID_TOKEN: "ISI_WALT_ID_TOKEN"
-      ENABLE_AUTO_PRESENT: "true"
+      ENABLE_AUTO_PRESENT: "false"
 
     restart: unless-stopped
 

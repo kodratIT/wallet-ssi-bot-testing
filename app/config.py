@@ -17,10 +17,10 @@ class Settings:
     """
 
     # ACA-Py
-    ACA_PY_URL: str = os.getenv("ACA_PY_URL", "https://cloud-aries-admin.devlab.biz.id")
+    ACA_PY_URL: str = os.getenv("ACA_PY_URL", "https://admin-pro-aries.devlab.biz.id")
     ACA_PY_TOKEN: str = os.getenv(
         "ACA_PY_TOKEN",
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3YWxsZXRfaWQiOiIyYWMyMmI1ZC1jMzZkLTRiNTItODExYy05MjEwYjhkNTY1NTEiLCJpYXQiOjE3ODkyMjYyMDd9.mXWbUH2WiBiM7x_9R9LtsZYjuEhZCn4xx-FRDTVZk44",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3YWxsZXRfaWQiOiIwNDk1NGE2MS02YzQ3LTRmMWItOWI0Yy02Y2JmMTk0YjY4NmUiLCJpYXQiOjE3ODk3Mjk5MTR9.8Ccl2W_QfhFmtqkSo72VLaVl7Lb45XoOLtgfbECBOM4",
     )
     ACA_PY_VERIFY_SSL: bool = os.getenv("ACA_PY_VERIFY_SSL", "false").lower() == "true"
     ACA_PY_TIMEOUT: int = int(os.getenv("ACA_PY_TIMEOUT", "10"))
@@ -48,6 +48,11 @@ class Settings:
 
     # Background workers for bursty load tests. Keep Gunicorn at one worker.
     RECEIVE_WORKERS: int = int(os.getenv("RECEIVE_WORKERS", "8"))
+    # Retry untuk POST receive-invitation yang timeout saat ACA-Py overload.
+    # Hanya error jaringan (requests.RequestException) yang di-retry;
+    # error permanen (ValueError: invitation invalid) langsung gagal.
+    RECEIVE_MAX_RETRIES: int = int(os.getenv("RECEIVE_MAX_RETRIES", "3"))
+    RECEIVE_RETRY_BASE_DELAY: float = float(os.getenv("RECEIVE_RETRY_BASE_DELAY", "2"))
     AUTO_PRESENT_WORKERS: int = int(os.getenv("AUTO_PRESENT_WORKERS", "8"))
     ENABLE_AUTO_PRESENT: bool = os.getenv("ENABLE_AUTO_PRESENT", "false").lower() == "true"
     AUTO_POLL_INTERVAL: int = int(os.getenv("AUTO_POLL_INTERVAL", "5"))

@@ -1,8 +1,11 @@
 import logging
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from typing import Optional
+
+import requests
 
 from app.config import settings
 from app.services.acapy_client import AcapyClient
@@ -58,7 +61,7 @@ class InvitationReceiveQueue:
         while True:
             task = self._tasks.get()
             try:
-                result = client.receive_invitation(task.invitation)
+                result = self._receive_with_retry(client, task.invitation)
                 conn_id = result.get("connection_id")
                 oob_id = result.get("oob_id")
                 track_id = conn_id or oob_id
@@ -73,9 +76,37 @@ class InvitationReceiveQueue:
                     oob_id,
                 )
             except Exception:
-                logger.exception("[RECEIVE-QUEUE] OOB processing failed")
+                logger.exception("[RECEIVE-QUEUE] OOB processing failed after retries")
             finally:
                 self._tasks.task_done()
+
+    def _receive_with_retry(self, client: AcapyClient, invitation: dict) -> dict:
+        """POST receive-invitation dengan retry untuk error jaringan transient.
+
+        ACA-Py cloud melambat (>30s) saat burst 200 paralel sehingga
+        requests.ReadTimeout massal. Tanpa retry, task langsung dibuang
+        dan flow verifier-nya POLL_TIMEOUT. Backoff eksponensial agar
+        tidak menambah beban ke server yang sudah overload.
+        """
+        max_retries = settings.RECEIVE_MAX_RETRIES
+        base_delay = settings.RECEIVE_RETRY_BASE_DELAY
+        attempt = 0
+        while True:
+            try:
+                return client.receive_invitation(invitation)
+            except requests.RequestException as e:
+                attempt += 1
+                if attempt > max_retries:
+                    raise
+                delay = base_delay * (2 ** (attempt - 1))
+                logger.warning(
+                    "[RECEIVE-QUEUE] ACA-Py %s, retry %d/%d dalam %.1fs",
+                    e.__class__.__name__,
+                    attempt,
+                    max_retries,
+                    delay,
+                )
+                time.sleep(delay)
 
 
 invitation_receive_queue = InvitationReceiveQueue()
